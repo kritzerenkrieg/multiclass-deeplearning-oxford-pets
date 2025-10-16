@@ -2,49 +2,57 @@ import os
 import shutil
 import random
 from pathlib import Path
+from sklearn.model_selection import KFold
 
 # === CONFIGURATION ===
 base_dir = Path("images")
-output_dir = Path("splitted_data")
+output_dir = Path("splitted_data_kfold")
 
-prefixes = [
-    "maine_coon_",
-    "pomeranian_",
-    "american_bulldog_",
-    "havanese_",
-    "german_shorthaired_"
-]
+breed_map = {
+    "maine_coon_": "Maine_Coon",
+    "pomeranian_": "Pomeranian",
+    "american_bulldog_": "American_Bulldog",
+    "havanese_": "Havanese",
+    "german_shorthaired_": "German_Shorthaired"
+}
 
-split_ratio = 0.8  # 80% train, 20% val
-
-# === PREPARE OUTPUT FOLDERS ===
-(output_dir / "train").mkdir(parents=True, exist_ok=True)
-(output_dir / "val").mkdir(parents=True, exist_ok=True)
-
+k_folds = 5  # number of folds
 random.seed(42)
 
-total_train, total_val = 0, 0
+# === CLEAN OUTPUT DIR (optional) ===
+if output_dir.exists():
+    shutil.rmtree(output_dir)
+output_dir.mkdir(parents=True, exist_ok=True)
 
-for prefix in prefixes:
-    breed_imgs = list(base_dir.glob(f"{prefix}*.jpg"))
+# === PREPARE FOLD STRUCTURE ===
+for i in range(1, k_folds + 1):
+    for split in ["train", "val"]:
+        for breed_name in breed_map.values():
+            (output_dir / f"fold_{i}" / split / breed_name).mkdir(parents=True, exist_ok=True)
+
+# === SPLIT EACH BREED INTO K FOLDS ===
+kf = KFold(n_splits=k_folds, shuffle=True, random_state=42)
+
+for prefix, folder_name in breed_map.items():
+    breed_imgs = sorted(list(base_dir.glob(f"{prefix}*.jpg")))
     if not breed_imgs:
         print(f"[WARN] No images found for prefix: {prefix}")
         continue
-    random.seed(42)
-    random.shuffle(breed_imgs)
-    split_idx = int(len(breed_imgs) * split_ratio)
-    train_imgs = breed_imgs[:split_idx]
-    val_imgs = breed_imgs[split_idx:]
 
-    # Copy images into the global train/val folders
-    for img_path in train_imgs:
-        shutil.copy(img_path, output_dir / "train" / img_path.name)
-    for img_path in val_imgs:
-        shutil.copy(img_path, output_dir / "val" / img_path.name)
+    breed_imgs = list(breed_imgs)
+    img_indices = list(range(len(breed_imgs)))
 
-    total_train += len(train_imgs)
-    total_val += len(val_imgs)
+    # Generate folds
+    for fold_idx, (train_idx, val_idx) in enumerate(kf.split(img_indices), 1):
+        train_imgs = [breed_imgs[i] for i in train_idx]
+        val_imgs = [breed_imgs[i] for i in val_idx]
 
-    print(f"{prefix:<25} → {len(train_imgs)} train, {len(val_imgs)} val")
+        for img_path in train_imgs:
+            shutil.copy(img_path, output_dir / f"fold_{fold_idx}" / "train" / folder_name / img_path.name)
+        for img_path in val_imgs:
+            shutil.copy(img_path, output_dir / f"fold_{fold_idx}" / "val" / folder_name / img_path.name)
 
-print(f"\n✅ Done! Total: {total_train} train, {total_val} val")
+    print(f"{folder_name:<25} → {len(breed_imgs)} total → {k_folds}-fold split complete")
+
+print(f"\n✅ All {k_folds} folds created successfully!")
+print(f"Location: {output_dir.resolve()}")
