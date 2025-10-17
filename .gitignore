@@ -1,2 +1,4 @@
-images/
+splitted_data_kfold/
 checkpoints_exp2/
+images/
+splitted_data_kfold/
